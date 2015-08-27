@@ -1,1 +1,7 @@
 /build
+# idea project files
+.idea/
+.idea/.name
+*.iml
+*.ipr
+*.iws
