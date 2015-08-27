@@ -28,4 +28,10 @@ proguard/
 # Log Files
 *.log
 
+# idea project files
+.idea/
+.idea/.name
+*.iml
+*.ipr
+*.iws
 
