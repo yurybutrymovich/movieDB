@@ -8,12 +8,11 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
 import android.util.Log;
-import android.view.LayoutInflater;
-import android.view.View;
-import android.view.ViewGroup;
+import android.view.*;
 import android.widget.AdapterView;
 import android.widget.GridView;
 import android.widget.Toast;
+import by.yurybutrymovich.moviedb.model.Movie;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -28,12 +27,13 @@ import java.util.ArrayList;
 import java.util.Properties;
 
 /**
- *  Fragment of the MainActivity.
+ * Fragment of the MainActivity.
  */
 public class MainFragment extends Fragment {
 
-    private ImageAdapter adapter;
-    public static String POSTER_URL = "http://image.tmdb.org/t/p/w185";
+    private MovieAdapter adapter;
+    public static final String POSTER_URL = "http://image.tmdb.org/t/p/w185";
+    public static final String EXTRA_MOVIE = "by.yurybutrymovich.extra.MOVIE";
 
     public MainFragment() {
     }
@@ -43,11 +43,33 @@ public class MainFragment extends Fragment {
         super.onCreate(savedInstanceState);
         // Add this line in order for this fragment to handle menu events.
         setHasOptionsMenu(true);
-        updateMovies();
+        updateMovies(FetchMoviesTask.POPULAR_MOVIES);
     }
 
-    private void updateMovies() {
-        new FetchMoviesTask().execute(FetchMoviesTask.POPULAR_MOVIES, getApiKey());
+
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        inflater.inflate(R.menu.menu_main_fragment, menu);
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+        if (id == R.id.action_most_popular) {
+            updateMovies(FetchMoviesTask.POPULAR_MOVIES);
+            return true;
+        } else if (id == R.id.action_latest) {
+            updateMovies(FetchMoviesTask.LATEST_MOVIES);
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    private void updateMovies(String type) {
+        new FetchMoviesTask().execute(type, getApiKey());
     }
 
     private String getApiKey() {
@@ -57,8 +79,7 @@ public class MainFragment extends Fragment {
             InputStream inputStream = assetManager.open("app.properties");
             Properties properties = new Properties();
             properties.load(inputStream);
-            String api_key = properties.getProperty("api_key");
-            return api_key;
+            return properties.getProperty("api_key");
         } catch (IOException e) {
             System.err.println("Failed to open app property file");
             e.printStackTrace();
@@ -71,13 +92,17 @@ public class MainFragment extends Fragment {
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
         GridView gridView = (GridView) rootView.findViewById(R.id.gridview);
-        adapter = new ImageAdapter(getActivity(), new ArrayList<String>(), POSTER_URL);
+        adapter = new MovieAdapter(getActivity(), new ArrayList<Movie>(), POSTER_URL);
         gridView.setAdapter(adapter);
         gridView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
             public void onItemClick(AdapterView<?> parent, View v,
                                     int position, long id) {
-                Toast.makeText(getActivity(), "" + position,
-                        Toast.LENGTH_SHORT).show();
+               /* Toast.makeText(getActivity(), "" + position,
+                        Toast.LENGTH_SHORT).show();*/
+
+                Intent detailMovieIntent = new Intent(getActivity(),DetailMovieActivity.class);
+                detailMovieIntent.putExtra(EXTRA_MOVIE,adapter.getItem(position));
+                startActivity(detailMovieIntent);
             }
         });
 
@@ -85,7 +110,7 @@ public class MainFragment extends Fragment {
     }
 
 
-    public class FetchMoviesTask extends AsyncTask<String, Void, String[]> {
+    public class FetchMoviesTask extends AsyncTask<String, Void, Movie[]> {
 
         public final static String LATEST_MOVIES = "latest";
         public final static String POPULAR_MOVIES = "popular";
@@ -95,10 +120,10 @@ public class MainFragment extends Fragment {
         private final String LOG_TAG = FetchMoviesTask.class.getSimpleName();
 
         @Override
-        protected void onPostExecute(String[] strings) {
-            if (strings != null && strings.length > 0) {
+        protected void onPostExecute(Movie[] movies) {
+            if (movies != null && movies.length > 0) {
                 adapter.clear();
-                for (String entry : strings) {
+                for (Movie entry : movies) {
                     adapter.add(entry);
                     adapter.notifyDataSetChanged();
                 }
@@ -106,11 +131,11 @@ public class MainFragment extends Fragment {
         }
 
         @Override
-        protected String[] doInBackground(String... strings) {
+        protected Movie[] doInBackground(String... strings) {
             String param, apiKey;
             if (strings.length == 0 || strings.length > 3) {
                 return null;
-            } else  {
+            } else {
                 param = strings[0];
                 apiKey = strings[1];
                 if (strings.length > 2) {
@@ -182,22 +207,40 @@ public class MainFragment extends Fragment {
             return null;
         }
 
-        private String[] getMovieDataFromJson(String moviesJsonStr) throws JSONException {
+        private Movie[] getMovieDataFromJson(String moviesJsonStr) throws JSONException {
             final String JSON_RESULTS = "results";
             final String JSON_POSTER_PATH = "poster_path";
+            final String JSON_ORIGINAL_TITLE = "original_title";
+            final String JSON_PLOT = "overview";
+            final String JSON_RELEASE_DATE = "release_date";
+            final String JSON_VOTE_AVERAGE = "vote_average";
+            final String JSON_VOTE_COUNT = "vote_count";
             JSONObject moviesJson = new JSONObject(moviesJsonStr);
-            JSONArray moviesArray = moviesJson.getJSONArray(JSON_RESULTS);
-            int fetchLimit = moviesArray.length() > maxNumberToFetch ? maxNumberToFetch : moviesArray.length();
-            String[] resultPaths = new String[fetchLimit];
-            for (int i=0;i<fetchLimit;i++) {
-                JSONObject movie = moviesArray.getJSONObject(i);
-                resultPaths[i] = movie.getString(JSON_POSTER_PATH);
+            Movie[] resultPaths = null;
+            if (moviesJson.has(JSON_RESULTS)) {
+                JSONArray moviesArray = moviesJson.getJSONArray(JSON_RESULTS);
+                int fetchLimit = moviesArray.length() > maxNumberToFetch ? maxNumberToFetch : moviesArray.length();
+                resultPaths = new Movie[fetchLimit];
+                for (int i = 0; i < fetchLimit; i++) {
+                    JSONObject movie = moviesArray.getJSONObject(i);
+                    Movie movieOut = new Movie();
+                    movieOut.setPosterUrl(movie.getString(JSON_POSTER_PATH));
+                    movieOut.setOriginalTitle(movie.getString(JSON_ORIGINAL_TITLE));
+                    movieOut.setPlot(movie.getString(JSON_PLOT));
+                    movieOut.setReleaseDate(movie.getString(JSON_RELEASE_DATE));
+                    movieOut.setVoteAverage(Float.parseFloat(movie.getString(JSON_VOTE_AVERAGE)));
+                    movieOut.setVoteCount(Integer.parseInt(movie.getString(JSON_VOTE_COUNT)));
+                    resultPaths[i] = movieOut;
+                }
+            } else if (moviesJson.has(JSON_POSTER_PATH)) {
+                Movie movie = new Movie();
+                movie.setPosterUrl(moviesJson.getString(JSON_POSTER_PATH));
+                resultPaths = new Movie[]{movie};
             }
+
             return resultPaths;
         }
     }
-
-
 
 
 }
